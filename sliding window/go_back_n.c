@@ -1,64 +1,98 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <unistd.h>   // For sleep()
+#include <math.h>
+#include <unistd.h>   
+#define TIMEOUT 2
 
-#define MAX_FRAMES 5
-#define TIMEOUT 2     // Timeout in seconds
+int TOTAL_FRAMES;
+int WINDOW_SIZE;
+
+int SF = 0;   // First unacknowledged
+int SN = 0;   // Next to send
+int RN = 0;   // Receiver expects
+
+int m;
+
+int lost_position;  // position inside window to lose
 
 // Function prototypes
-int sender(int frame_no);
-int receiver(int frame_no);
-
-// Global variable
-int ack_received = 0;
+int receiver(int frame_no, int position);
+void sender();
 
 int main() {
-    int frame = 0;
+
+    printf("Enter number of sequence bits (m): ");
+    scanf("%d", &m);
+
+    TOTAL_FRAMES = pow(2, m);
+    WINDOW_SIZE = TOTAL_FRAMES - 1;
+
+    printf("Total Sequence Numbers = %d\n", TOTAL_FRAMES);
+    printf("Window Size = %d\n\n", WINDOW_SIZE);
 
     srand(time(0));
+    sender();
 
-    while (frame < MAX_FRAMES) {
-
-        printf("\nSender: Sending Frame %d\n", frame);
-
-        if (sender(frame)) {
-            frame++;   // Move to next frame
-        } else {
-            printf("Sender: Waiting for ACK...\n");
-            sleep(TIMEOUT);   // 🔥 Real timeout delay
-            printf("Sender: Timeout! Resending Frame %d\n", frame);
-        }
-    }
-
-    printf("\nAll frames sent successfully!\n");
     return 0;
 }
 
 // ------------------- Sender -------------------
-int sender(int frame_no) {
+void sender() {
 
-    ack_received = receiver(frame_no);
+    while (SF < TOTAL_FRAMES) {
 
-    if (ack_received == 1) {
-        printf("Sender: ACK received for Frame %d\n", frame_no);
-        return 1;
+        lost_position = rand() % WINDOW_SIZE + 1;
+
+        printf("\n(New Window: Frame %d to %d)\n", SF, SF + WINDOW_SIZE - 1);
+        printf("Simulated Lost Position in Window: %d\n\n", lost_position);
+
+        int position = 1;
+
+        while ((SN < SF + WINDOW_SIZE) && (SN < TOTAL_FRAMES)) {
+
+            int seq_no = SN % TOTAL_FRAMES;
+
+            printf("Sender: Sending Frame %d (Seq %d)\n", SN, seq_no);
+
+            int ack = receiver(seq_no, position);
+
+            if (ack == 1) {
+                printf("Sender: ACK received for Seq %d\n", seq_no);
+                SF++;
+            } else {
+
+                printf("Sender: Waiting for ACK...\n");
+                sleep(TIMEOUT);   // 🔥 Proper timeout delay
+
+                printf("Sender: Timeout occurred! Go-Back from Frame %d\n", SF);
+                SN = SF;
+                break;
+            }
+
+            SN++;
+            position++;
+        }
     }
 
-    return 0;   // No ACK
+    printf("\nAll frames transmitted successfully!\n");
 }
 
 // ------------------- Receiver -------------------
-int receiver(int frame_no) {
+int receiver(int frame_no, int position) {
 
-    int random = rand() % 2;  // 50% loss chance
+    if (position == lost_position) {
+        printf("Receiver: Frame with Seq %d lost (chosen by rand)!\n", frame_no);
+        return 0;
+    }
 
-    if (random == 0) {
-        printf("Receiver: Frame %d received successfully\n", frame_no);
+    if (frame_no == (RN % TOTAL_FRAMES)) {
+        printf("Receiver: Frame with Seq %d received correctly\n", frame_no);
         printf("Receiver: Sending ACK %d\n", frame_no + 1);
+        RN++;
         return 1;
     } else {
-        printf("Receiver: Frame %d lost or corrupted!\n", frame_no);
+        printf("Receiver: Out-of-order frame %d discarded\n", frame_no);
         return 0;
     }
 }
